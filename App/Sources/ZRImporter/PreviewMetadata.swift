@@ -6,10 +6,11 @@ struct PreviewMetadata: Equatable {
     let dimensions: String?
     let codec: String?
 
-    static func load(from url: URL) -> PreviewMetadata? {
+    static func load(from url: URL) async -> PreviewMetadata? {
         let asset = AVURLAsset(url: url)
-        let videoTrack = asset.tracks(withMediaType: .video).first
-        let seconds = CMTimeGetSeconds(asset.duration)
+        let videoTrack = (try? await asset.loadTracks(withMediaType: .video))?.first
+        let durationTime = (try? await asset.load(.duration)) ?? .zero
+        let seconds = CMTimeGetSeconds(durationTime)
 
         let duration = seconds.isFinite && seconds > 0
             ? Self.durationFormatter.string(from: seconds) ?? String(format: "%.1f s", seconds)
@@ -17,7 +18,9 @@ struct PreviewMetadata: Equatable {
 
         let dimensions: String?
         if let videoTrack {
-            let transformed = videoTrack.naturalSize.applying(videoTrack.preferredTransform)
+            let naturalSize = (try? await videoTrack.load(.naturalSize)) ?? .zero
+            let preferredTransform = (try? await videoTrack.load(.preferredTransform)) ?? .identity
+            let transformed = naturalSize.applying(preferredTransform)
             let width = Int(abs(transformed.width).rounded())
             let height = Int(abs(transformed.height).rounded())
             dimensions = width > 0 && height > 0 ? "\(width) × \(height)" : nil
@@ -26,8 +29,8 @@ struct PreviewMetadata: Equatable {
         }
 
         let codec: String?
-        if let format = videoTrack?.formatDescriptions.first {
-            let subtype = CMFormatDescriptionGetMediaSubType(format as! CMFormatDescription)
+        if let format = try? await videoTrack?.load(.formatDescriptions).first {
+            let subtype = CMFormatDescriptionGetMediaSubType(format)
             codec = Self.fourCC(subtype)
         } else {
             codec = nil

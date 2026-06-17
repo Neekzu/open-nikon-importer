@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added a disk-space precheck before imports start, including a local reserve for large video transfers.
+- Added safe duplicate handling: imports now keep existing local files and save new copies with a numbered suffix instead of overwriting.
+- Added an original macOS app icon and bundled it into packaged builds.
+- Improved the main workflow UI with readiness chips, clearer empty states, larger thumbnails, and grouped inspector details.
 - Fixed raw PTP re-import behavior so an existing local file is replaced only after the new `.partial` file is fully written and size-verified.
 - Added a release-readiness audit document and cleaned up public maintenance docs.
 - Added beginner-friendly DMG packaging with an Applications shortcut and first-run install instructions.

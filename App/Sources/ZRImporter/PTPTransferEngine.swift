@@ -48,6 +48,7 @@ enum PTPTransferError: Error, LocalizedError {
     case nikonExtendedTransferUnavailable(String)
     case cannotCreateFile(String)
     case sizeMismatch(String)
+    case destinationAlreadyExists(String)
 
     var errorDescription: String? {
         switch self {
@@ -65,6 +66,8 @@ enum PTPTransferError: Error, LocalizedError {
             return "Zieldatei konnte nicht angelegt werden: \(path)"
         case .sizeMismatch(let message):
             return message
+        case .destinationAlreadyExists(let path):
+            return "Zieldatei existiert bereits und wurde nicht überschrieben: \(path)"
         }
     }
 }
@@ -166,11 +169,9 @@ final class PTPTransferEngine {
             throw PTPTransferError.sizeMismatch("\(object.filename): Importgröße stimmt nicht. Erwartet \(expectedSize) Bytes, geschrieben \(finalSize) Bytes.")
         }
 
-        // Replace any existing import only after the new file is fully written and
-        // size-verified. This keeps the previously imported copy intact if the
-        // transfer fails midway (camera unplugged, disk full, PTP error).
         if FileManager.default.fileExists(atPath: destinationURL.path) {
-            try FileManager.default.removeItem(at: destinationURL)
+            try? FileManager.default.removeItem(at: partialURL)
+            throw PTPTransferError.destinationAlreadyExists(destinationURL.path)
         }
         try FileManager.default.moveItem(at: partialURL, to: destinationURL)
 

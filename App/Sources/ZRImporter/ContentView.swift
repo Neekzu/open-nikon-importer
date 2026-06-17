@@ -15,7 +15,7 @@ struct ContentView: View {
             footer
         }
         .frame(minWidth: 1180, minHeight: 680)
-        .onChange(of: model.selectedIDs) { _ in
+        .onChange(of: model.selectedIDs) {
             model.selectionDidChange()
         }
     }
@@ -77,6 +77,7 @@ struct ContentView: View {
                 } label: {
                     Label("Ziel", systemImage: "folder")
                 }
+                .disabled(!model.canChangeDestination)
                 .help("Importziel wählen")
 
                 Button {
@@ -86,6 +87,8 @@ struct ContentView: View {
                 }
                 .help("Ziel im Finder zeigen")
             }
+
+            statusChipRow
 
             HStack(spacing: 8) {
                 Image(systemName: "folder.fill")
@@ -123,19 +126,126 @@ struct ContentView: View {
         .padding(.vertical, 12)
     }
 
-    private var contentArea: some View {
-        HSplitView {
-            Group {
-                if model.displayMode == .list {
-                    fileTable
-                } else {
-                    thumbnailGrid
-                }
+    private var statusChipRow: some View {
+        HStack(spacing: 8) {
+            ForEach(model.workflowStatusChips) { chip in
+                workflowStatusChip(chip)
             }
-            .frame(minWidth: 720)
-            detailPanel
-                .frame(minWidth: 320, idealWidth: 380, maxWidth: 460)
         }
+    }
+
+    private func workflowStatusChip(_ chip: WorkflowStatusChip) -> some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(statusColor(for: chip.kind))
+                .frame(width: 7, height: 7)
+            Text(chip.title)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+            Text(chip.value)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(Color(nsColor: .controlBackgroundColor), in: Capsule())
+        .overlay(
+            Capsule()
+                .stroke(statusColor(for: chip.kind).opacity(chip.kind == .idle ? 0.16 : 0.28), lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private var contentArea: some View {
+        if !model.hasConnectedCamera {
+            noCameraOnboarding
+        } else {
+            HSplitView {
+                Group {
+                    if model.visibleFiles.isEmpty {
+                        emptyCatalogState
+                    } else if model.displayMode == .list {
+                        fileTable
+                    } else {
+                        thumbnailGrid
+                    }
+                }
+                .frame(minWidth: 720, maxWidth: .infinity, maxHeight: .infinity)
+                .layoutPriority(1)
+                detailPanel
+                    .frame(minWidth: 320, idealWidth: 400, maxWidth: 520)
+            }
+        }
+    }
+
+    private var noCameraOnboarding: some View {
+        VStack(spacing: 22) {
+            Image(systemName: "camera.viewfinder")
+                .font(.system(size: 58, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.secondary)
+
+            VStack(spacing: 6) {
+                Text("Kamera per USB-C verbinden")
+                    .font(.title2.weight(.semibold))
+                Text("Kamera einschalten, MTP/PTP-Transfermodus nutzen und danach den Katalog aktualisieren.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 540)
+            }
+
+            HStack(spacing: 10) {
+                onboardingStep("1", "USB-C")
+                onboardingStep("2", "MTP/PTP")
+                onboardingStep("3", "Aktualisieren")
+            }
+
+            Button {
+                model.refresh()
+            } label: {
+                Label("Katalog aktualisieren", systemImage: "arrow.clockwise")
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private func onboardingStep(_ number: String, _ label: String) -> some View {
+        HStack(spacing: 8) {
+            Text(number)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.white)
+                .frame(width: 20, height: 20)
+                .background(Color.accentColor, in: Circle())
+            Text(label)
+                .font(.callout.weight(.medium))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var emptyCatalogState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "rectangle.stack.badge.magnifyingglass")
+                .font(.system(size: 44, weight: .semibold))
+                .foregroundStyle(.secondary)
+            Text(model.files.isEmpty ? "Keine importierbaren Dateien gefunden" : "Keine Dateien im aktuellen Filter")
+                .font(.headline)
+            Text(model.files.isEmpty ? "Der Katalog ist leer oder macOS meldet noch keine sichtbaren Medien." : "Filter ändern oder den Katalog erneut lesen.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 480)
+            Button {
+                model.refresh()
+            } label: {
+                Label("Aktualisieren", systemImage: "arrow.clockwise")
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .textBackgroundColor))
     }
 
     private var fileTable: some View {
@@ -201,16 +311,19 @@ struct ContentView: View {
     private var thumbnailGrid: some View {
         ScrollView {
             LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 172, maximum: 230), spacing: 10)],
-                spacing: 10
+                columns: [GridItem(.adaptive(minimum: 246), spacing: 14, alignment: .topLeading)],
+                alignment: .leading,
+                spacing: 14
             ) {
                 ForEach(model.visibleFiles) { item in
                     thumbnailCard(for: item)
                 }
             }
-            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .padding(16)
         }
-        .background(Color(nsColor: .textBackgroundColor))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private func thumbnailCard(for item: CameraFileItem) -> some View {
@@ -218,8 +331,7 @@ struct ContentView: View {
 
         return VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: .topLeading) {
-                thumbnailView(for: item, size: CGSize(width: 210, height: 118))
-                    .frame(maxWidth: .infinity)
+                thumbnailSurface(for: item)
 
                 Text(model.mediaKind(for: item).label)
                     .font(.caption2.weight(.semibold))
@@ -252,11 +364,12 @@ struct ContentView: View {
                     .lineLimit(1)
             }
         }
-        .padding(8)
-        .background(selected ? Color.accentColor.opacity(0.22) : Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(selected ? Color.accentColor.opacity(0.12) : Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(selected ? Color.accentColor : Color.secondary.opacity(0.16), lineWidth: selected ? 2 : 1)
+                .stroke(selected ? Color.accentColor.opacity(0.86) : Color.secondary.opacity(0.12), lineWidth: selected ? 2 : 1)
         )
         .contentShape(RoundedRectangle(cornerRadius: 8))
         .onTapGesture {
@@ -265,6 +378,30 @@ struct ContentView: View {
         .onTapGesture(count: 2) {
             model.preview(item)
         }
+    }
+
+    private func thumbnailSurface(for item: CameraFileItem) -> some View {
+        ZStack {
+            if let image = model.thumbnail(for: item) {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Color(nsColor: .underPageBackgroundColor)
+                Image(systemName: iconName(for: item))
+                    .font(.system(size: 46, weight: .semibold))
+                    .foregroundStyle(iconColor(for: item))
+            }
+        }
+        .aspectRatio(16.0 / 9.0, contentMode: .fit)
+        .frame(maxWidth: .infinity)
+        .clipped()
+        .background(.black.opacity(0.85))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color.secondary.opacity(0.14), lineWidth: 1)
+        )
     }
 
     private var detailPanel: some View {
@@ -404,22 +541,37 @@ struct ContentView: View {
     }
 
     private func metadataSection(for item: CameraFileItem) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Metadaten")
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Workflow")
                 .font(.headline)
 
-            Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 7) {
-                ForEach(Array(model.detailRows(for: item).enumerated()), id: \.offset) { _, row in
-                    GridRow(alignment: .top) {
-                        Text(row.0)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .frame(width: 92, alignment: .leading)
-                        Text(row.1)
-                            .font(.caption)
-                            .textSelection(.enabled)
-                            .lineLimit(row.0 == "Lokal" ? 3 : 2)
-                    }
+            metadataRows(model.workflowRows(for: item))
+
+            let technicalRows = model.technicalRows(for: item)
+            if !technicalRows.isEmpty {
+                DisclosureGroup {
+                    metadataRows(technicalRows)
+                        .padding(.top, 6)
+                } label: {
+                    Text("Technische Details")
+                        .font(.headline)
+                }
+            }
+        }
+    }
+
+    private func metadataRows(_ rows: [(String, String)]) -> some View {
+        Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 7) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                GridRow(alignment: .top) {
+                    Text(row.0)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 112, alignment: .leading)
+                    Text(row.1)
+                        .font(.caption)
+                        .textSelection(.enabled)
+                        .lineLimit(row.0 == "Lokal" ? 3 : 2)
                 }
             }
         }
@@ -523,6 +675,21 @@ struct ContentView: View {
         return .green
     }
 
+    private func statusColor(for kind: WorkflowStatusKind) -> Color {
+        switch kind {
+        case .ready:
+            return .green
+        case .working:
+            return .blue
+        case .warning:
+            return .orange
+        case .blocked:
+            return .red
+        case .idle:
+            return .secondary
+        }
+    }
+
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
@@ -551,7 +718,7 @@ private struct VideoPreviewView: View {
             .onDisappear {
                 player?.pause()
             }
-            .onChange(of: url) { newURL in
+            .onChange(of: url) { _, newURL in
                 player?.pause()
                 player = AVPlayer(url: newURL)
             }

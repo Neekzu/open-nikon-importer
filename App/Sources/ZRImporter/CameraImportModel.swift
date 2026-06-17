@@ -22,11 +22,14 @@ final class CameraImportModel: NSObject, ObservableObject, ICDeviceBrowserDelega
     @Published var previewSubtitle: String?
     @Published var previewStatus: String?
     @Published var previewMetadata: PreviewMetadata?
+    @Published private var nrawScanPhase: NRAWScanPhase = .idle
 
     private let browser = ICDeviceBrowser()
     private let ptpEngine = PTPTransferEngine()
     private var camera: ICCameraDevice?
     private var importQueue: [CameraFileItem] = []
+    private var importDestinationURLs: [CameraFileItem.ID: URL] = [:]
+    private var activeImportFolderURL: URL?
     private var catalogGeneration = 0
     private var progressObservers: [CameraFileItem.ID: NSKeyValueObservation] = [:]
     private var previewProgressObserver: NSKeyValueObservation?
@@ -34,6 +37,7 @@ final class CameraImportModel: NSObject, ObservableObject, ICDeviceBrowserDelega
     private var thumbnailItemIDsByCameraFile = [ObjectIdentifier: Set<CameraFileItem.ID>]()
     private let previewCacheURL: URL
     private let maxTemporaryPreviewBytes: Int64 = 1_200_000_000
+    private let minimumFreeSpaceAfterImport: Int64 = 512 * 1_024 * 1_024
 
     override init() {
         let movies = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask).first
@@ -83,11 +87,28 @@ final class CameraImportModel: NSObject, ObservableObject, ICDeviceBrowserDelega
         !visibleFiles.isEmpty && importQueue.isEmpty
     }
 
+    var canChangeDestination: Bool {
+        importQueue.isEmpty
+    }
+
+    var hasConnectedCamera: Bool {
+        camera != nil
+    }
+
     var visibleTotalSizeLabel: String {
         ByteCountFormatter.string(
             fromByteCount: visibleFiles.reduce(Int64(0)) { $0 + $1.size },
             countStyle: .file
         )
+    }
+
+    var workflowStatusChips: [WorkflowStatusChip] {
+        [
+            cameraStatusChip,
+            catalogStatusChip,
+            nrawStatusChip,
+            destinationStatusChip
+        ]
     }
 
     func start() {
@@ -99,6 +120,7 @@ final class CameraImportModel: NSObject, ObservableObject, ICDeviceBrowserDelega
             files = []
             selectedIDs = []
             thumbnails.removeAll()
+            nrawScanPhase = .idle
             connectionStatus = "Keine Kamera verbunden"
             return
         }
@@ -219,19 +241,14 @@ final class CameraImportModel: NSObject, ObservableObject, ICDeviceBrowserDelega
         return nil
     }
 
-    func detailRows(for item: CameraFileItem) -> [(String, String)] {
+    func workflowRows(for item: CameraFileItem) -> [(String, String)] {
         var rows: [(String, String)] = [
             ("Format", mediaKind(for: item).label),
             ("Datei", item.name),
-            ("Extension", item.fileExtension.isEmpty ? "-" : item.fileExtension),
             ("Größe", item.sizeLabel),
             ("Datum", item.createdAt.map(Self.detailDateFormatter.string(from:)) ?? "-"),
             ("Quelle", item.sourceLabel)
         ]
-
-        if let uti = item.uti, !uti.isEmpty {
-            rows.append(("UTI", uti))
-        }
 
         if let proxy = pairedProxy(for: item) {
             rows.append(("Preview-Proxy", proxy.name))
@@ -239,6 +256,30 @@ final class CameraImportModel: NSObject, ObservableObject, ICDeviceBrowserDelega
 
         if let localURL = localImportedURL(for: item) {
             rows.append(("Lokal", localURL.path(percentEncoded: false)))
+        }
+
+        if let metadata = previewMetadata {
+            if let duration = metadata.duration {
+                rows.append(("Dauer", duration))
+            }
+            if let dimensions = metadata.dimensions {
+                rows.append(("Auflösung", dimensions))
+            }
+            if let codec = metadata.codec {
+                rows.append(("Codec", codec))
+            }
+        }
+
+        return rows
+    }
+
+    func technicalRows(for item: CameraFileItem) -> [(String, String)] {
+        var rows: [(String, String)] = [
+            ("Extension", item.fileExtension.isEmpty ? "-" : item.fileExtension)
+        ]
+
+        if let uti = item.uti, !uti.isEmpty {
+            rows.append(("UTI", uti))
         }
 
         switch item.source {
@@ -261,18 +302,6 @@ final class CameraImportModel: NSObject, ObservableObject, ICDeviceBrowserDelega
                 rows.append(("Resolved Size", "\(resolved)"))
             }
             rows.append(("Transfer", object.needsNikonExtendedTransfer ? "Nikon 64-bit PTP" : "Standard PTP"))
-        }
-
-        if let metadata = previewMetadata {
-            if let duration = metadata.duration {
-                rows.append(("Dauer", duration))
-            }
-            if let dimensions = metadata.dimensions {
-                rows.append(("Auflösung", dimensions))
-            }
-            if let codec = metadata.codec {
-                rows.append(("Codec", codec))
-            }
         }
 
         return rows
@@ -305,6 +334,7 @@ final class CameraImportModel: NSObject, ObservableObject, ICDeviceBrowserDelega
         files = []
         selectedIDs = []
         thumbnails.removeAll()
+        nrawScanPhase = .idle
         selectionDidChange()
         importQueue = []
         progressObservers.removeAll()
@@ -332,6 +362,7 @@ final class CameraImportModel: NSObject, ObservableObject, ICDeviceBrowserDelega
         files = []
         selectedIDs = []
         thumbnails.removeAll()
+        nrawScanPhase = .idle
         selectionDidChange()
         connectionStatus = "Kamera getrennt"
     }
@@ -396,6 +427,7 @@ final class CameraImportModel: NSObject, ObservableObject, ICDeviceBrowserDelega
         selectionDidChange()
         requestThumbnails(for: nextFiles)
         connectionStatus = nextFiles.isEmpty ? "Lese PTP-Katalog" : "\(nextFiles.count) Dateien · lese N-RAW"
+        nrawScanPhase = .scanning
 
         let hasNikonZR = (camera.name ?? "").localizedCaseInsensitiveContains("ZR")
         let hasNRAW = nextFiles.contains { $0.fileExtension == "NEV" }
@@ -407,6 +439,7 @@ final class CameraImportModel: NSObject, ObservableObject, ICDeviceBrowserDelega
 
         guard camera.capabilities.contains("ICCameraDeviceCanAcceptPTPCommands") else {
             connectionStatus = nextFiles.isEmpty ? "Keine importierbaren Dateien" : "\(nextFiles.count) Dateien"
+            nrawScanPhase = .unsupported
             return
         }
 
@@ -434,6 +467,7 @@ final class CameraImportModel: NSObject, ObservableObject, ICDeviceBrowserDelega
                     self.connectionStatus = nrawItems.isEmpty
                         ? "\(merged.count) Dateien"
                         : "\(merged.count) Dateien · \(nrawItems.count) N-RAW"
+                    self.nrawScanPhase = nrawItems.isEmpty ? .noneFound : .found(nrawItems.count)
                     self.systemNote = nrawItems.isEmpty
                         ? "Keine .NEV-Dateien im PTP-Katalog gefunden."
                         : "N-RAW aktiv: .NEV wird direkt per PTP importiert."
@@ -442,6 +476,7 @@ final class CameraImportModel: NSObject, ObservableObject, ICDeviceBrowserDelega
                 DispatchQueue.main.async { [weak self] in
                     guard let self, generation == self.catalogGeneration else { return }
                     self.connectionStatus = nextFiles.isEmpty ? "PTP-Katalogfehler" : "\(nextFiles.count) Dateien"
+                    self.nrawScanPhase = .failed
                     self.systemNote = "PTP-Katalog konnte nicht gelesen werden: \(error.localizedDescription)"
                 }
             }
@@ -472,6 +507,23 @@ final class CameraImportModel: NSObject, ObservableObject, ICDeviceBrowserDelega
             return
         }
 
+        let plan = makeImportPlan(for: importableItems, in: destinationURL)
+        if let diskSpaceError = diskSpacePreflightError(for: importableItems, in: destinationURL) {
+            for item in importableItems {
+                importStates[item.id] = .failed(diskSpaceError)
+            }
+            lastErrorMessage = diskSpaceError
+            return
+        }
+
+        if plan.duplicateCount > 0 {
+            let firstRename = plan.renamedExamples.first.map { "\($0.original) -> \($0.renamed)" }
+            let detail = firstRename.map { " Beispiel: \($0)." } ?? ""
+            systemNote = "Bestehende Dateien werden nicht überschrieben. \(plan.duplicateCount) Import\(plan.duplicateCount == 1 ? "" : "e") erhalten automatisch einen Suffix.\(detail)"
+        }
+
+        importDestinationURLs = plan.destinationURLs
+        activeImportFolderURL = destinationURL
         importQueue = importableItems
         for item in importableItems {
             importStates[item.id] = .queued
@@ -482,7 +534,9 @@ final class CameraImportModel: NSObject, ObservableObject, ICDeviceBrowserDelega
     private func importNext() {
         guard !importQueue.isEmpty else {
             progressObservers.removeAll()
-            lastImportedFolder = destinationURL
+            lastImportedFolder = activeImportFolderURL ?? destinationURL
+            activeImportFolderURL = nil
+            importDestinationURLs.removeAll()
             connectionStatus = "\(files.count) Dateien"
             return
         }
@@ -500,10 +554,12 @@ final class CameraImportModel: NSObject, ObservableObject, ICDeviceBrowserDelega
     }
 
     private func importImageCaptureFile(_ file: ICCameraFile, item: CameraFileItem) {
+        let targetURL = importDestinationURLs[item.id] ?? destinationURL.appendingPathComponent(item.name)
+        let targetFolderURL = targetURL.deletingLastPathComponent()
         let options: [ICDownloadOption: Any] = [
-            .downloadsDirectoryURL: destinationURL,
-            .saveAsFilename: item.name,
-            .overwrite: true,
+            .downloadsDirectoryURL: targetFolderURL,
+            .saveAsFilename: targetURL.lastPathComponent,
+            .overwrite: false,
             .sidecarFiles: true,
             .deleteAfterSuccessfulDownload: false
         ]
@@ -517,7 +573,7 @@ final class CameraImportModel: NSObject, ObservableObject, ICDeviceBrowserDelega
                     self.importStates[item.id] = .failed(error.localizedDescription)
                     self.lastErrorMessage = error.localizedDescription
                 } else {
-                    let savedURL = self.destinationURL.appendingPathComponent(savedFilename ?? item.name)
+                    let savedURL = targetFolderURL.appendingPathComponent(savedFilename ?? targetURL.lastPathComponent)
                     self.importStates[item.id] = .complete(savedURL)
                     if self.selectedIDs.contains(item.id) {
                         self.selectionDidChange()
@@ -542,7 +598,7 @@ final class CameraImportModel: NSObject, ObservableObject, ICDeviceBrowserDelega
             return
         }
 
-        let outputURL = destinationURL.appendingPathComponent(item.name)
+        let outputURL = importDestinationURLs[item.id] ?? destinationURL.appendingPathComponent(item.name)
         Task { [weak self, weak camera] in
             guard let self, let camera else { return }
 
@@ -571,6 +627,181 @@ final class CameraImportModel: NSObject, ObservableObject, ICDeviceBrowserDelega
                 }
             }
         }
+    }
+
+    private var cameraStatusChip: WorkflowStatusChip {
+        if hasConnectedCamera {
+            return WorkflowStatusChip(title: "Camera", value: cameraName, kind: .ready)
+        }
+        return WorkflowStatusChip(title: "Camera", value: "Nicht verbunden", kind: .idle)
+    }
+
+    private var catalogStatusChip: WorkflowStatusChip {
+        guard hasConnectedCamera else {
+            return WorkflowStatusChip(title: "Catalog", value: "Wartet", kind: .idle)
+        }
+
+        if connectionStatus.localizedCaseInsensitiveContains("Lese") {
+            return WorkflowStatusChip(title: "Catalog", value: "Liest", kind: .working)
+        }
+
+        if files.isEmpty {
+            return WorkflowStatusChip(title: "Catalog", value: "Leer", kind: .warning)
+        }
+
+        return WorkflowStatusChip(title: "Catalog", value: "\(files.count) Dateien", kind: .ready)
+    }
+
+    private var nrawStatusChip: WorkflowStatusChip {
+        switch nrawScanPhase {
+        case .idle:
+            return WorkflowStatusChip(title: "N-RAW scan", value: "Wartet", kind: .idle)
+        case .scanning:
+            return WorkflowStatusChip(title: "N-RAW scan", value: "Läuft", kind: .working)
+        case .found(let count):
+            return WorkflowStatusChip(title: "N-RAW scan", value: "\(count) gefunden", kind: .ready)
+        case .noneFound:
+            return WorkflowStatusChip(title: "N-RAW scan", value: "Keine .NEV", kind: .idle)
+        case .unsupported:
+            return WorkflowStatusChip(title: "N-RAW scan", value: "Nicht verfügbar", kind: .warning)
+        case .failed:
+            return WorkflowStatusChip(title: "N-RAW scan", value: "Fehler", kind: .warning)
+        }
+    }
+
+    private var destinationStatusChip: WorkflowStatusChip {
+        switch destinationReadiness() {
+        case .writable:
+            return WorkflowStatusChip(title: "Destination", value: "Beschreibbar", kind: .ready)
+        case .willCreate:
+            return WorkflowStatusChip(title: "Destination", value: "Wird erstellt", kind: .ready)
+        case .notWritable:
+            return WorkflowStatusChip(title: "Destination", value: "Nicht beschreibbar", kind: .blocked)
+        }
+    }
+
+    private func destinationReadiness() -> DestinationReadiness {
+        let fileManager = FileManager.default
+        var isDirectory: ObjCBool = false
+
+        if fileManager.fileExists(atPath: destinationURL.path, isDirectory: &isDirectory) {
+            return isDirectory.boolValue && fileManager.isWritableFile(atPath: destinationURL.path)
+                ? .writable
+                : .notWritable
+        }
+
+        var probeURL = destinationURL.deletingLastPathComponent()
+        while !fileManager.fileExists(atPath: probeURL.path, isDirectory: &isDirectory) {
+            let nextURL = probeURL.deletingLastPathComponent()
+            if nextURL.path == probeURL.path {
+                return .notWritable
+            }
+            probeURL = nextURL
+        }
+
+        return isDirectory.boolValue && fileManager.isWritableFile(atPath: probeURL.path)
+            ? .willCreate
+            : .notWritable
+    }
+
+    private func makeImportPlan(for items: [CameraFileItem], in folderURL: URL) -> ImportPlan {
+        var destinationURLs: [CameraFileItem.ID: URL] = [:]
+        var reservedPaths = Set<String>()
+        var renamedExamples: [(original: String, renamed: String)] = []
+
+        for item in items {
+            let destinationURL = uniqueDestinationURL(
+                for: item.name,
+                in: folderURL,
+                reservedPaths: &reservedPaths
+            )
+            destinationURLs[item.id] = destinationURL
+
+            if destinationURL.lastPathComponent != item.name {
+                renamedExamples.append((item.name, destinationURL.lastPathComponent))
+            }
+        }
+
+        return ImportPlan(
+            destinationURLs: destinationURLs,
+            duplicateCount: renamedExamples.count,
+            renamedExamples: Array(renamedExamples.prefix(3))
+        )
+    }
+
+    private func uniqueDestinationURL(
+        for filename: String,
+        in folderURL: URL,
+        reservedPaths: inout Set<String>
+    ) -> URL {
+        let baseName = (filename as NSString).deletingPathExtension
+        let pathExtension = (filename as NSString).pathExtension
+
+        for index in 1...10_000 {
+            let candidateName: String
+            if index == 1 {
+                candidateName = filename
+            } else if pathExtension.isEmpty {
+                candidateName = "\(baseName) (\(index))"
+            } else {
+                candidateName = "\(baseName) (\(index)).\(pathExtension)"
+            }
+
+            let candidateURL = folderURL.appendingPathComponent(candidateName)
+            let reservedKey = candidateURL.standardizedFileURL.path.lowercased()
+            if !reservedPaths.contains(reservedKey),
+               !FileManager.default.fileExists(atPath: candidateURL.path) {
+                reservedPaths.insert(reservedKey)
+                return candidateURL
+            }
+        }
+
+        let fallbackName = UUID().uuidString + "-" + filename
+        let fallbackURL = folderURL.appendingPathComponent(fallbackName)
+        reservedPaths.insert(fallbackURL.standardizedFileURL.path.lowercased())
+        return fallbackURL
+    }
+
+    private func diskSpacePreflightError(for items: [CameraFileItem], in folderURL: URL) -> String? {
+        let requiredBytes = items.reduce(Int64(0)) { partial, item in
+            partial + max(0, item.size)
+        }
+        guard requiredBytes > 0 else { return nil }
+
+        do {
+            let availableBytes = try availableCapacityForImport(at: folderURL)
+            let requiredWithReserve = requiredBytes + minimumFreeSpaceAfterImport
+            guard availableBytes >= requiredWithReserve else {
+                return [
+                    "Nicht genug freier Speicher am Importziel.",
+                    "Benötigt \(Self.bytesLabel(requiredBytes)) plus \(Self.bytesLabel(minimumFreeSpaceAfterImport)) Reserve, verfügbar \(Self.bytesLabel(availableBytes))."
+                ].joined(separator: " ")
+            }
+        } catch {
+            return "Freier Speicher am Importziel konnte nicht geprüft werden: \(error.localizedDescription)"
+        }
+
+        return nil
+    }
+
+    private func availableCapacityForImport(at folderURL: URL) throws -> Int64 {
+        let values = try folderURL.resourceValues(forKeys: [
+            .volumeAvailableCapacityForImportantUsageKey,
+            .volumeAvailableCapacityKey
+        ])
+
+        if let capacity = values.volumeAvailableCapacityForImportantUsage {
+            return capacity
+        }
+        if let capacity = values.volumeAvailableCapacity {
+            return Int64(capacity)
+        }
+
+        throw CocoaError(.fileReadUnknown)
+    }
+
+    private static func bytesLabel(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 
     private static func defaultImportFolder(base: URL) -> URL {
@@ -810,7 +1041,7 @@ final class CameraImportModel: NSObject, ObservableObject, ICDeviceBrowserDelega
         }
 
         Task {
-            let metadata = PreviewMetadata.load(from: previewURL)
+            let metadata = await PreviewMetadata.load(from: previewURL)
             await MainActor.run {
                 if self.previewURL == previewURL {
                     self.previewMetadata = metadata
@@ -836,4 +1067,41 @@ private enum PreviewError: LocalizedError {
             return message
         }
     }
+}
+
+private struct ImportPlan {
+    let destinationURLs: [CameraFileItem.ID: URL]
+    let duplicateCount: Int
+    let renamedExamples: [(original: String, renamed: String)]
+}
+
+struct WorkflowStatusChip: Identifiable {
+    let title: String
+    let value: String
+    let kind: WorkflowStatusKind
+
+    var id: String { title }
+}
+
+enum WorkflowStatusKind {
+    case ready
+    case working
+    case warning
+    case blocked
+    case idle
+}
+
+private enum NRAWScanPhase: Equatable {
+    case idle
+    case scanning
+    case found(Int)
+    case noneFound
+    case unsupported
+    case failed
+}
+
+private enum DestinationReadiness {
+    case writable
+    case willCreate
+    case notWritable
 }
