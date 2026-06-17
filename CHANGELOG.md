@@ -4,7 +4,7 @@
 
 - Aligned the filter and view controls so segmented pills start at the left edge of the toolbar group.
 - Added a manual update-check menu item that opens the latest GitHub Release.
-- Updated local install script to replace `/Applications/Open Nikon Importer.app` and remove old `ZR Importer.app` copies.
+- Updated local install script to replace `/Applications/Open Nikon Importer.app`, remove old `ZR Importer.app` copies, and avoid rewriting release ZIPs after checksums are generated.
 - Added a disk-space precheck before imports start, including a local reserve for large video transfers.
 - Added safe duplicate handling: imports now keep existing local files and save new copies with a numbered suffix instead of overwriting.
 - Added an original macOS app icon and bundled it into packaged builds.
