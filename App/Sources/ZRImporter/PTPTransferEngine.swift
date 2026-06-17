@@ -58,9 +58,9 @@ enum PTPTransferError: Error, LocalizedError {
         case .transferFailed(let message):
             return message
         case .fileBeyondPTPLimit(let filename):
-            return "\(filename) ist groesser als der 32-bit-PTP-Downloadpfad der Kamera."
+            return "\(filename) ist größer als der 32-bit-PTP-Downloadpfad der Kamera."
         case .nikonExtendedTransferUnavailable(let filename):
-            return "\(filename): Nikon-64-bit-Transfer ist fuer diese Datei nicht verfuegbar."
+            return "\(filename): Nikon-64-bit-Transfer ist für diese Datei nicht verfügbar."
         case .cannotCreateFile(let path):
             return "Zieldatei konnte nicht angelegt werden: \(path)"
         case .sizeMismatch(let message):
@@ -133,9 +133,6 @@ final class PTPTransferEngine {
         if FileManager.default.fileExists(atPath: partialURL.path) {
             try FileManager.default.removeItem(at: partialURL)
         }
-        if FileManager.default.fileExists(atPath: destinationURL.path) {
-            try FileManager.default.removeItem(at: destinationURL)
-        }
 
         guard FileManager.default.createFile(atPath: partialURL.path, contents: nil) else {
             throw PTPTransferError.cannotCreateFile(partialURL.path)
@@ -165,9 +162,16 @@ final class PTPTransferEngine {
         try fileHandle.close()
         let finalSize = ((try? FileManager.default.attributesOfItem(atPath: partialURL.path)[.size]) as? NSNumber)?.uint64Value ?? 0
         guard finalSize == expectedSize else {
-            throw PTPTransferError.sizeMismatch("\(object.filename): Importgroesse stimmt nicht. Erwartet \(expectedSize) Bytes, geschrieben \(finalSize) Bytes.")
+            try? FileManager.default.removeItem(at: partialURL)
+            throw PTPTransferError.sizeMismatch("\(object.filename): Importgröße stimmt nicht. Erwartet \(expectedSize) Bytes, geschrieben \(finalSize) Bytes.")
         }
 
+        // Replace any existing import only after the new file is fully written and
+        // size-verified. This keeps the previously imported copy intact if the
+        // transfer fails midway (camera unplugged, disk full, PTP error).
+        if FileManager.default.fileExists(atPath: destinationURL.path) {
+            try FileManager.default.removeItem(at: destinationURL)
+        }
         try FileManager.default.moveItem(at: partialURL, to: destinationURL)
 
         var attributes: [FileAttributeKey: Any] = [:]

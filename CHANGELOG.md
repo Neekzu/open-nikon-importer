@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fixed raw PTP re-import behavior so an existing local file is replaced only after the new `.partial` file is fully written and size-verified.
+- Added a release-readiness audit document and cleaned up public maintenance docs.
 - Added beginner-friendly DMG packaging with an Applications shortcut and first-run install instructions.
 - Added release packaging script that builds app, zip, DMG, and checksum files.
 - Renamed public project direction to Open Nikon Importer.
