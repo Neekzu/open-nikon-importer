@@ -49,26 +49,25 @@ struct ContentView: View {
 
     private var controls: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 12) {
-                Picker("Filter", selection: $model.filter) {
-                    ForEach(FileFilter.allCases) { filter in
-                        Text(filter.rawValue).tag(filter)
-                    }
+            HStack(alignment: .bottom, spacing: 16) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Filter")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    filterControl
                 }
-                .pickerStyle(.segmented)
-                .frame(width: 340)
 
-                Picker("Ansicht", selection: $model.displayMode) {
-                    ForEach(DisplayMode.allCases) { mode in
-                        Text(mode.rawValue).tag(mode)
-                    }
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Ansicht")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    displayModeControl
                 }
-                .pickerStyle(.segmented)
-                .frame(width: 210)
 
                 Text("\(model.visibleFiles.count) Dateien · \(model.visibleTotalSizeLabel)")
                     .font(.callout)
                     .foregroundStyle(.secondary)
+                    .padding(.bottom, 5)
 
                 Spacer()
 
@@ -124,6 +123,55 @@ struct ContentView: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 12)
+    }
+
+    private var filterControl: some View {
+        HStack(spacing: 1) {
+            ForEach(FileFilter.allCases) { filter in
+                segmentedButton(
+                    title: filter.rawValue,
+                    selected: model.filter == filter,
+                    width: 66
+                ) {
+                    model.filter = filter
+                }
+            }
+        }
+        .padding(2)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var displayModeControl: some View {
+        HStack(spacing: 1) {
+            ForEach(DisplayMode.allCases) { mode in
+                segmentedButton(
+                    title: mode.rawValue,
+                    selected: model.displayMode == mode,
+                    width: 92
+                ) {
+                    model.displayMode = mode
+                }
+            }
+        }
+        .padding(2)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func segmentedButton(
+        title: String,
+        selected: Bool,
+        width: CGFloat,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.callout.weight(.semibold))
+                .lineLimit(1)
+                .frame(width: width, height: 26)
+                .foregroundStyle(selected ? Color.primary : Color.secondary)
+                .background(selected ? Color(nsColor: .selectedControlColor).opacity(0.72) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(.plain)
     }
 
     private var statusChipRow: some View {

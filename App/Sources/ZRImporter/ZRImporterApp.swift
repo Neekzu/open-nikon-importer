@@ -27,6 +27,10 @@ struct ZRImporterApp: App {
             }
 
             CommandMenu("Project") {
+                Button("Check for Updates") {
+                    NSWorkspace.shared.open(AppInfo.latestReleaseURL)
+                }
+
                 Button("Open GitHub Project") {
                     NSWorkspace.shared.open(AppInfo.repositoryURL)
                 }
@@ -37,4 +41,5 @@ struct ZRImporterApp: App {
 
 enum AppInfo {
     static let repositoryURL = URL(string: "https://github.com/Neekzu/open-nikon-importer")!
+    static let latestReleaseURL = URL(string: "https://github.com/Neekzu/open-nikon-importer/releases/latest")!
 }
