@@ -11,10 +11,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Package app bundle
-        run: ./Scripts/package-app.sh
+        run: ./Scripts/package-release.sh
 
       - name: Upload app archive
         uses: actions/upload-artifact@v4
         with:
           name: open-nikon-importer-macos
-          path: Build/*.zip
+          path: |
+            Build/*.zip
+            Build/*.dmg
+            Build/checksums-*.txt

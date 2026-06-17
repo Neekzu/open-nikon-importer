@@ -50,11 +50,22 @@ The packaged app is written to `Build/Open Nikon Importer.app` and a zip archive
 
 ## Install Locally
 
+For normal users, download the `.dmg` from the latest GitHub Release:
+
+1. Open `Open Nikon Importer-...dmg`.
+2. Drag `Open Nikon Importer` into `Applications`.
+3. Open it from `Applications`.
+4. If macOS warns because this is a preview build, right-click the app and choose `Open` once.
+
+Developer/local install:
+
 ```sh
 ./Scripts/install-local.sh
 ```
 
 macOS may ask for removable-media access after each ad-hoc build/sign. Allow it once so the app can read the connected camera catalog.
+
+See [docs/INSTALL.md](docs/INSTALL.md) for the no-assumptions user install guide.
 
 ## Verified Test Case
 

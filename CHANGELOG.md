@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added beginner-friendly DMG packaging with an Applications shortcut and first-run install instructions.
+- Added release packaging script that builds app, zip, DMG, and checksum files.
 - Renamed public project direction to Open Nikon Importer.
 - Added open-source project files, packaging scripts, GitHub templates, and CI scaffolding.
 - Added Nikon ZR N-RAW import support through raw PTP commands.

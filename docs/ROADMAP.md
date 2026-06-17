@@ -2,7 +2,7 @@
 
 ## Public 0.1
 
-- Package a downloadable macOS `.app`.
+- Package a downloadable macOS `.dmg`.
 - Document Nikon ZR support clearly.
 - Add GitHub issue templates for compatibility reports.
 - Keep manual release downloads until signing/notarization is ready.

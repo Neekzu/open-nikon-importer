@@ -1,0 +1,18 @@
+OPEN NIKON IMPORTER
+
+Install:
+
+1. Drag "Open Nikon Importer.app" onto "Applications".
+2. Open Applications.
+3. Open "Open Nikon Importer".
+
+If macOS says it cannot verify the app:
+
+1. Open Applications.
+2. Right-click "Open Nikon Importer".
+3. Click Open.
+4. Confirm Open once.
+
+When macOS asks for removable-media access, click Allow.
+
+The app imports files locally and does not delete files from your camera.
