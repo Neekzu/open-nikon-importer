@@ -1,0 +1,40 @@
+name: Camera compatibility
+description: Share whether a Nikon camera works with Open Nikon Importer.
+title: "[Camera]: "
+labels: ["compatibility"]
+body:
+  - type: input
+    id: camera
+    attributes:
+      label: Camera model
+      placeholder: "Nikon ZR"
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware version
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+    validations:
+      required: true
+  - type: dropdown
+    id: connection
+    attributes:
+      label: Camera USB mode
+      options:
+        - MTP/PTP
+        - iPhone mode
+        - USB streaming
+        - Other/unknown
+    validations:
+      required: true
+  - type: textarea
+    id: results
+    attributes:
+      label: What worked or failed?
+      placeholder: "Catalog loads, thumbnails work, .NEV import succeeds/fails..."
+    validations:
+      required: true

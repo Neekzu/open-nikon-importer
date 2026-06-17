@@ -1,0 +1,20 @@
+name: Package Preview
+
+on:
+  workflow_dispatch:
+
+jobs:
+  package:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Package app bundle
+        run: ./Scripts/package-app.sh
+
+      - name: Upload app archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: open-nikon-importer-macos
+          path: Build/*.zip

@@ -1,0 +1,32 @@
+# Swift Package Manager
+App/.build/
+App/.swiftpm/
+.build/
+.swiftpm/
+
+# Xcode/local state
+*.xcuserdata/
+*.xcuserstate
+DerivedData/
+
+# App bundles and local release artifacts
+Build/
+*.app
+*.dmg
+*.zip
+*.tar.gz
+*.aar
+*.dSYM/
+
+# Local probe binaries
+Probe/zr-*
+
+# macOS
+.DS_Store
+
+# Secrets/signing material
+*.p12
+*.cer
+*.mobileprovision
+sparkle_private_key*
+notarytool-profile*
