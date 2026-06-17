@@ -6,9 +6,10 @@ BUILD_DIR="$ROOT_DIR/Build"
 PLIST_TEMPLATE="$ROOT_DIR/Packaging/Info.plist"
 APP_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$PLIST_TEMPLATE")"
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST_TEMPLATE")"
+ASSET_NAME="${APP_NAME// /.}"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 DMG_ROOT="$BUILD_DIR/dmg-root"
-DMG_PATH="$BUILD_DIR/$APP_NAME-$VERSION-macos.dmg"
+DMG_PATH="$BUILD_DIR/$ASSET_NAME-$VERSION-macos.dmg"
 VOLUME_NAME="$APP_NAME $VERSION"
 
 detach_dmg_devices() {

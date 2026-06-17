@@ -10,8 +10,9 @@ EXECUTABLE="ZRImporter"
 
 APP_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$PLIST_TEMPLATE")"
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST_TEMPLATE")"
+ASSET_NAME="${APP_NAME// /.}"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
-ARCHIVE_PATH="$BUILD_DIR/$APP_NAME-$VERSION-macos.zip"
+ARCHIVE_PATH="$BUILD_DIR/$ASSET_NAME-$VERSION-macos.zip"
 
 swift build --package-path "$APP_DIR" -c release --product "$EXECUTABLE"
 BIN_DIR="$(swift build --package-path "$APP_DIR" -c release --show-bin-path)"
